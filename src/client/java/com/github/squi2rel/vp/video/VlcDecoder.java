@@ -13,15 +13,22 @@ import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCall
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.function.BiConsumer;
 
 public class VlcDecoder {
+    public static final String RESTART_SEEK_PARAM = ":videoplayer-restart-seek";
     private static MediaPlayerFactory factory;
     private final EmbeddedMediaPlayer mediaPlayer;
+    private VideoInfo currentInfo;
+    private boolean restartSeek;
 
     private int width = 1, height = 1;
     private final TextureRenderFormatCallback callback = new TextureRenderFormatCallback();
     private ByteBuffer buffer, glBuffer;
+    private boolean loggedFirstFrame;
 
     public long lastPlayTime;
     public long lastPlayUpdateTime;
@@ -30,6 +37,7 @@ public class VlcDecoder {
     private Runnable playListener = () -> {}, finishListener = () -> {};
 
     public VlcDecoder() {
+        load();
         mediaPlayer = factory.mediaPlayers().newEmbeddedMediaPlayer();
         mediaPlayer.videoSurface().set(new CallbackVideoSurface(new BufferFormatCallbackAdapter() {
             @Override
@@ -43,6 +51,7 @@ public class VlcDecoder {
                         glBuffer = BufferUtils.createByteBuffer(bytes);
                         buffer = BufferUtils.createByteBuffer(bytes);
                         sizeListener.accept(width, height);
+                        VideoPlayerMain.LOGGER.info("VideoPlayer VLC video format: {}x{}", width, height);
                     }
                 }
                 return new RGBAFormat(sourceWidth, sourceHeight);
@@ -72,9 +81,20 @@ public class VlcDecoder {
         });
     }
 
-    public static void load() {
+    public static synchronized void load() {
+        if (factory != null) return;
+        VlcLibrary.prepare();
         VideoPlayerMain.LOGGER.info("loading library");
-        factory = new MediaPlayerFactory("--audio-filter=scaletempo");
+        factory = new MediaPlayerFactory(
+                "--audio-filter=scaletempo",
+                hardwareDecodeOption(),
+                "--drop-late-frames",
+                "--skip-frames",
+                "--network-caching=3000",
+                "--file-caching=3000",
+                "--live-caching=3000",
+                VlcLibrary.pluginOption()
+        );
         VideoPlayerMain.LOGGER.info("loaded library");
     }
 
@@ -96,7 +116,10 @@ public class VlcDecoder {
 
     public void init(VideoInfo info) {
         lastPlayTime = 0;
-        mediaPlayer.media().play(info.path().replace("rtspt://", "rtsp://"), info.params());
+        loggedFirstFrame = false;
+        currentInfo = info;
+        restartSeek = hasRestartSeekParam(info.params());
+        play(info, -1);
     }
 
     public ByteBuffer decodeNextFrame() {
@@ -139,19 +162,31 @@ public class VlcDecoder {
     }
 
     public boolean canSetProgress() {
-        return mediaPlayer.status().isSeekable();
+        return mediaPlayer.status().isSeekable() || restartSeek;
     }
 
     public void setProgress(long progress) {
+        lastPlayTime = Math.max(0, progress);
+        lastPlayUpdateTime = System.currentTimeMillis();
+        if (restartSeek && currentInfo != null) {
+            play(currentInfo, progress);
+            return;
+        }
         mediaPlayer.controls().setTime(progress);
     }
 
     public long getProgress() {
-        return lastPlayTime == 0 ? 0 : System.currentTimeMillis() - lastPlayUpdateTime + lastPlayTime;
+        long time = mediaPlayer.status().time();
+        if (time >= 0) return time;
+        return Math.max(0, lastPlayTime);
     }
 
     public long getTotalProgress() {
         return mediaPlayer.status().length();
+    }
+
+    public boolean hasFrame() {
+        return loggedFirstFrame;
     }
 
     public void setRate(float rate) {
@@ -160,6 +195,38 @@ public class VlcDecoder {
 
     public float getRate() {
         return mediaPlayer.status().rate();
+    }
+
+    private void play(VideoInfo info, long startTime) {
+        List<String> params = new ArrayList<>(Arrays.asList(stripInternalParams(info.params())));
+        if (startTime > 0) {
+            params.removeIf(param -> param.startsWith(":start-time="));
+            params.add(":start-time=" + startTime / 1000f);
+        }
+        mediaPlayer.media().play(info.path().replace("rtspt://", "rtsp://"), params.toArray(String[]::new));
+    }
+
+    private static boolean hasRestartSeekParam(String[] params) {
+        if (params == null) return false;
+        return Arrays.asList(params).contains(RESTART_SEEK_PARAM);
+    }
+
+    private static String[] stripInternalParams(String[] params) {
+        if (params == null) return new String[0];
+        return Arrays.stream(ClientClockListener.stripInternalParams(params))
+                .filter(param -> !RESTART_SEEK_PARAM.equals(param))
+                .toArray(String[]::new);
+    }
+
+    public static String hardwareDecodeOption() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("win")) return "--avcodec-hw=d3d11va";
+        if (os.contains("mac")) return "--avcodec-hw=videotoolbox";
+        return "--avcodec-hw=vaapi";
+    }
+
+    public static String hardwareDecodeMediaOption() {
+        return ":" + hardwareDecodeOption().substring(2);
     }
 
     private class TextureRenderFormatCallback implements RenderCallback {
@@ -179,6 +246,10 @@ public class VlcDecoder {
         public synchronized void display(MediaPlayer mediaPlayer, ByteBuffer[] nativeBuffers, BufferFormat bufferFormat, int displayWidth, int displayHeight) {
             if (glBuffer == null) return;
             glBuffer.position(0).put(nativeBuffers[0].position(0).limit(glBuffer.capacity())).flip();
+            if (!loggedFirstFrame) {
+                loggedFirstFrame = true;
+                VideoPlayerMain.LOGGER.info("VideoPlayer VLC first frame: {}x{}", displayWidth, displayHeight);
+            }
         }
 
         @Override

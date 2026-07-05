@@ -2,6 +2,7 @@ package com.github.squi2rel.vp.video;
 
 import com.github.squi2rel.vp.provider.VideoInfo;
 import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -31,8 +32,8 @@ public record ClonePlayer(ClientVideoScreen screen, ClientVideoScreen source) im
     }
 
     @Override
-    public int getTextureId() {
-        return source.player.getTextureId();
+    public Identifier getTextureIdentifier() {
+        return source.player.getTextureIdentifier();
     }
 
     @Override

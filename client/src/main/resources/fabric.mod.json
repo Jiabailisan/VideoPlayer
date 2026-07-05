@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 1,
+	"id": "videoplayer_client",
+	"version": "${version}",
+	"name": "VideoPlayer-Client",
+	"description": "Client renderer, VLC playback, GUI, and controls for VideoPlayer.",
+	"authors": [
+		"squi2rel",
+		"ported-by-codex"
+	],
+	"contact": {
+		"sources": "https://github.com/squi2rel/VideoPlayer/"
+	},
+	"license": "GPL-3.0",
+	"icon": "assets/videoplayer/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.github.squi2rel.vp.VideoPlayerClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "videoplayer.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.16.14",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*",
+		"videoplayer": ">=${version}"
+	},
+	"suggests": {
+		"vivecraft": ">=1.3.0"
+	},
+	"breaks": {
+		"vivecraft": "<1.3.0"
+	}
+}

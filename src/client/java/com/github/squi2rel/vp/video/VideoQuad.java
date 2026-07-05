@@ -1,85 +1,78 @@
 package com.github.squi2rel.vp.video;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.NativeImageBackedTexture;
+import net.minecraft.client.texture.TextureManager;
+import net.minecraft.util.Identifier;
+import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
-
-import static org.lwjgl.opengl.GL21.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class VideoQuad {
+    public static final Identifier MISSING_IDENTIFIER = TextureManager.MISSING_IDENTIFIER;
+    private static final AtomicInteger NEXT_ID = new AtomicInteger();
 
-    private int textureId;
+    private final Identifier textureIdentifier = Identifier.of("videoplayer", "frame/" + NEXT_ID.incrementAndGet());
+    private NativeImageBackedTexture texture;
     private int width;
     private int height;
     private boolean textureInitialized = false;
-    private final PBOManager pbo = new PBOManager();
 
     public VideoQuad(int width, int height) {
         this.width = width;
         this.height = height;
         initializeTexture();
-        pbo.init(width, height);
     }
 
     public synchronized void resize(int width, int height) {
         this.width = width;
         this.height = height;
         regenTexture();
-        pbo.init(width, height);
     }
 
     private void initializeTexture() {
-        textureId = glGenTextures();
         regenTexture();
     }
 
     public synchronized void stop() {
-        pbo.release();
     }
 
     private void regenTexture() {
-        RenderSystem.bindTexture(textureId);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, (ByteBuffer) null);
-
-        RenderSystem.bindTexture(0);
+        texture = new NativeImageBackedTexture("videoplayer-frame", width, height, false);
+        MinecraftClient.getInstance().getTextureManager().registerTexture(textureIdentifier, texture);
         textureInitialized = true;
     }
 
     public synchronized void updateTexture(ByteBuffer frameData) {
-        if (!pbo.allocated()) return;
-        RenderSystem.bindTexture(textureId);
-        RenderSystem.pixelStore(GL_UNPACK_ALIGNMENT, 4);
-        RenderSystem.pixelStore(GL_UNPACK_ROW_LENGTH, width);
-        RenderSystem.pixelStore(GL_UNPACK_SKIP_ROWS, 0);
-        RenderSystem.pixelStore(GL_UNPACK_SKIP_PIXELS, 0);
-        int prevPBO = glGetInteger(GL_PIXEL_UNPACK_BUFFER_BINDING);
-        pbo.bind();
-        ByteBuffer buf = pbo.map();
-        if (buf.remaining() == frameData.remaining()) buf.put(frameData);
-        pbo.unmap();
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, prevPBO);
-        RenderSystem.bindTexture(0);
+        if (!textureInitialized || texture == null || frameData == null) return;
+        NativeImage image = texture.getImage();
+        if (image == null) return;
+        int bytes = width * height * 4;
+        if (frameData.capacity() < bytes) return;
+        ByteBuffer src = frameData.duplicate().position(0).limit(bytes);
+        forceOpaque(src, bytes);
+        src.position(0).limit(bytes);
+        MemoryUtil.memCopy(MemoryUtil.memAddress(src), image.imageId(), bytes);
+        texture.upload();
+    }
+
+    private static void forceOpaque(ByteBuffer src, int bytes) {
+        for (int i = 3; i < bytes; i += 4) {
+            src.put(i, (byte) 0xFF);
+        }
     }
 
     public void cleanup() {
         if (textureInitialized) {
-            MinecraftClient.getInstance().execute(() -> {
-                glDeleteTextures(textureId);
-                pbo.release();
-            });
+            MinecraftClient.getInstance().execute(() -> MinecraftClient.getInstance().getTextureManager().destroyTexture(textureIdentifier));
             textureInitialized = false;
+            texture = null;
         }
     }
 
-    public int getTextureId() {
-        return textureId;
+    public Identifier getTextureIdentifier() {
+        return textureIdentifier;
     }
 }

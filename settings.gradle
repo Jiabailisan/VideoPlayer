@@ -4,7 +4,42 @@ pluginManagement {
 			name = 'Fabric'
 			url = 'https://maven.fabricmc.net/'
 		}
+		maven {
+			name = 'Paper'
+			url = 'https://repo.papermc.io/repository/maven-public/'
+		}
 		mavenCentral()
 		gradlePluginPortal()
 	}
 }
+
+dependencyResolutionManagement {
+	repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
+	repositories {
+		mavenCentral()
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		maven {
+			name = 'Paper'
+			url = 'https://repo.papermc.io/repository/maven-public/'
+		}
+		exclusiveContent {
+			forRepository {
+				maven {
+					name = "Modrinth"
+					url = "https://api.modrinth.com/maven"
+				}
+			}
+			filter {
+				includeGroup "maven.modrinth"
+			}
+		}
+	}
+}
+
+rootProject.name = "VideoPlayer"
+include "core-fabric"
+include "client"
+include "folia-plugin"

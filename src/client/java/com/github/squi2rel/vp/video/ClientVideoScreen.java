@@ -71,9 +71,9 @@ public class ClientVideoScreen extends VideoScreen {
 
         if (player instanceof VideoPlayer vp && !vp.isPaused()) {
             long syncTime = 150L * Math.max(syncFrames, 1);
-            if (meta.getOrDefault("autoSync", 0) != 0 && System.currentTimeMillis() - lastAutoSync >= syncTime) {
+            if (meta.getOrDefault("autoSync", 1) != 0 && System.currentTimeMillis() - lastAutoSync >= syncTime) {
                 lastAutoSync = System.currentTimeMillis();
-                ClientPacketHandler.autoSync(this, System.currentTimeMillis());
+                ClientPacketHandler.autoSync(this, System.currentTimeMillis(), vp.getProgress());
             }
         }
     }
@@ -84,11 +84,22 @@ public class ClientVideoScreen extends VideoScreen {
 
     public void load() {
         VideoPlayerClient.screens.add(this);
+        source = VideoScreen.normalizeSource(source);
         if (source.isEmpty()) {
             if (toPlay != null) play(toPlay);
             return;
         }
-        ClientVideoScreen parent = (ClientVideoScreen) area.screens.stream().filter(v -> Objects.equals(v.name, source)).findAny().orElseThrow();
+        ClientVideoScreen parent = (ClientVideoScreen) area.screens.stream()
+                .filter(v -> Objects.equals(v.name, source))
+                .findAny()
+                .orElse(null);
+        if (parent == null) {
+            var player = MinecraftClient.getInstance().player;
+            if (player != null) {
+                player.sendMessage(Text.literal("VideoPlayer 屏幕 " + name + " 引用了不存在的源屏幕 " + source + "，已跳过该克隆屏幕").formatted(Formatting.RED), false);
+            }
+            return;
+        }
         ((ClientVideoArea) area).afterLoad(() -> player = new ClonePlayer(this, parent));
     }
 
@@ -129,6 +140,10 @@ public class ClientVideoScreen extends VideoScreen {
 
     public void setProgress(long progress) {
         syncFrames = 0;
+        if (player == null) {
+            toSeek = progress;
+            return;
+        }
         player.setProgress(progress);
         startTime = System.currentTimeMillis() - progress;
     }
@@ -153,6 +168,12 @@ public class ClientVideoScreen extends VideoScreen {
             if (progress <= 0) return;
 
             long delta = syncProgress - progress;
+            if (Math.abs(delta) > 10000) {
+                setProgress(syncProgress);
+                if (vp.getRate() != 1f) vp.setRate(1f);
+                MinecraftClient.getInstance().inGameHud.setOverlayMessage(Text.literal("已强制同步到服务器进度").formatted(Formatting.YELLOW), false);
+                return;
+            }
             if (delta > -25 && delta <= 25) {
                 syncFrames++;
             } else {
@@ -181,9 +202,6 @@ public class ClientVideoScreen extends VideoScreen {
                     if (vp.getRate() != 0.9f) vp.setRate(0.9f);
                 } else if (delta > -5000) {
                     if (vp.getRate() != 0.8f) vp.setRate(0.8f);
-                } else if (delta > -10000) {
-                    vp.stop();
-                    MinecraftClient.getInstance().inGameHud.setOverlayMessage(Text.literal("提前太多，失去同步").formatted(Formatting.RED), false);
                 }
             }
 
@@ -207,6 +225,6 @@ public class ClientVideoScreen extends VideoScreen {
     }
 
     public static ClientVideoScreen from(VideoScreen screen) {
-        return new ClientVideoScreen(screen.area, screen.name, screen.p1, screen.p2, screen.p3, screen.p4, screen.source);
+        return new ClientVideoScreen(screen.area, screen.name, screen.p1, screen.p2, screen.p3, screen.p4, VideoScreen.normalizeSource(screen.source));
     }
 }

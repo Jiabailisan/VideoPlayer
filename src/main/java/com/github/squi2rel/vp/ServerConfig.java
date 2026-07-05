@@ -10,4 +10,14 @@ public class ServerConfig {
     public float remoteControlId = -1;
     public float remoteControlRange = 64;
     public float noControlRange = 16;
+    public boolean debug = false;
+    public ProviderAuth providerAuth = new ProviderAuth();
+
+    public static class ProviderAuth {
+        public String bilibiliCookie = "";
+        public String bilibiliCookieFile = "bilibili-cookies.txt";
+        public String youtubeCookie = "";
+        public String youtubeCookieFile = "youtube-cookies.txt";
+        public String ytDlpPath = "";
+    }
 }

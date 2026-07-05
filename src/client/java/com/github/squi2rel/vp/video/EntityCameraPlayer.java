@@ -39,8 +39,6 @@ public class EntityCameraPlayer extends AbstractCameraPlayer implements MetaList
                 return;
             }
         }
-        super.updateTexture();
-        CameraRenderer.renderWorld(entity, pool, framebuffer, entityOutlineFramebuffer, aspect, fov);
     }
 
     @Override

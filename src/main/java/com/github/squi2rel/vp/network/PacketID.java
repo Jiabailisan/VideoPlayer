@@ -26,7 +26,10 @@ public class PacketID {
     SET_META = 16,
     SET_CUSTOM_META = 17,
     SET_SCALE = 18,
-    AUTO_SYNC = 19;
+    AUTO_SYNC = 19,
+    MEDIA_OPTIONS = 20,
+    SEEK = 21,
+    QUEUE_ACTION = 22;
 
     public enum Action {
         MUTE("静音", i -> (i >>> 1) == 0, (v, i) -> v.meta.put("mute", i)),

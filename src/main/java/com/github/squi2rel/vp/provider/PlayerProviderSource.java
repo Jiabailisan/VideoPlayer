@@ -12,7 +12,7 @@ public class PlayerProviderSource implements IProviderSource {
 
     @Override
     public String name() {
-        return player.getGameProfile().getName();
+        return player.getGameProfile().name();
     }
 
     @Override

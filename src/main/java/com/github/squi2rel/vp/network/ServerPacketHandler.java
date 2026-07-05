@@ -1,6 +1,8 @@
 package com.github.squi2rel.vp.network;
 
 import com.github.squi2rel.vp.ServerConfig;
+import com.github.squi2rel.vp.VideoPlayerMain;
+import com.github.squi2rel.vp.provider.MediaOption;
 import com.github.squi2rel.vp.provider.PlayerProviderSource;
 import com.github.squi2rel.vp.provider.VideoInfo;
 import com.github.squi2rel.vp.provider.VideoProviders;
@@ -30,8 +32,11 @@ import static com.github.squi2rel.vp.network.PacketID.*;
 
 public class ServerPacketHandler {
     public static void handle(ServerPlayerEntity player, ByteBuf buf) {
+        if (buf.readableBytes() < 1) {
+            throw new IllegalStateException("empty VideoPlayer packet");
+        }
         short type = buf.readUnsignedByte();
-        LOGGER.info("server type: {}", type);
+        if (DataHolder.config.debug) LOGGER.info("server type: {}", type);
         switch (type) {
             case CONFIG -> {
                 ByteBufUtils.readString(buf, 16);
@@ -44,8 +49,10 @@ public class ServerPacketHandler {
                 if (area == null) return;
                 VideoScreen screen = area.getScreen(readName(buf));
                 if (screen == null) return;
-                String url = ByteBufUtils.readString(buf, 256);
-                if (fetchSource(player, url, screen::addInfo)) return;
+                String url = ByteBufUtils.readString(buf, 16384);
+                String optionId = buf.readableBytes() > 0 ? ByteBufUtils.readString(buf, 128) : "";
+                if (DataHolder.config.debug) LOGGER.info("request player={} area={} screen={} option={} url={}", player.getName().getString(), area.name, screen.name, optionId, url);
+                if (fetchSource(player, url, optionId, screen::addInfo)) return;
             }
             case SYNC -> {
                 VideoArea area = getArea(player, readName(buf));
@@ -55,30 +62,30 @@ public class ServerPacketHandler {
                 sendTo(player, sync(screen, screen.getProgress()));
             }
             case CREATE_AREA -> {
-                // TODO check permission
-                VideoArea area = VideoArea.from(ByteBufUtils.readVec3(buf), ByteBufUtils.readVec3(buf), readName(buf), player.getWorld().getRegistryKey().getValue().toString());
+                if (!isAdmin(player)) return;
+                VideoArea area = VideoArea.from(ByteBufUtils.readVec3(buf), ByteBufUtils.readVec3(buf), readName(buf), player.getEntityWorld().getRegistryKey().getValue().toString());
                 area.initServer();
                 DataHolder.lock();
                 DataHolder.areas.computeIfAbsent(area.dim, k -> new HashMap<>()).put(area.name, area);
                 DataHolder.unlock();
-                player.sendMessage(Text.literal("已成功在世界 " + player.getWorld().getRegistryKey().getValue() + " 创建名为 " + area.name + " 的观影区!").formatted(Formatting.GREEN));
+                player.sendMessage(Text.literal("已成功在世界 " + player.getEntityWorld().getRegistryKey().getValue() + " 创建名为 " + area.name + " 的观影区!").formatted(Formatting.GREEN));
             }
             case REMOVE_AREA -> {
-                // TODO check permission
+                if (!isAdmin(player)) return;
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 DataHolder.lock();
                 DataHolder.areas.get(area.dim).remove(area.name).remove();
                 if (area.hasPlayer()) {
                     byte[] data = removeArea(area);
-                    PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                     area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
                 }
                 DataHolder.unlock();
-                player.sendMessage(Text.literal("已成功在世界 " + player.getWorld().getRegistryKey().getValue() + " 移除名为 " + area.name + " 的观影区!").formatted(Formatting.GREEN));
+                player.sendMessage(Text.literal("已成功在世界 " + player.getEntityWorld().getRegistryKey().getValue() + " 移除名为 " + area.name + " 的观影区!").formatted(Formatting.GREEN));
             }
             case CREATE_SCREEN -> {
-                // TODO check permission
+                if (!isAdmin(player)) return;
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 VideoScreen screen = VideoScreen.read(buf, area);
@@ -87,21 +94,21 @@ public class ServerPacketHandler {
                 area.addScreen(screen);
                 if (area.hasPlayer()) {
                     byte[] data = createScreen(List.of(screen));
-                    PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                     area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
                 }
                 DataHolder.unlock();
                 player.sendMessage(Text.literal("已成功在观影区 " + area.name + " 创建名为 " + screen.name + " 的屏幕!").formatted(Formatting.GREEN));
             }
             case REMOVE_SCREEN -> {
-                // TODO check permission
+                if (!isAdmin(player)) return;
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 DataHolder.lock();
                 VideoScreen screen = area.removeScreen(readName(buf));
                 if (screen != null && area.hasPlayer()) {
                     byte[] data = removeScreen(screen);
-                    PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                     area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
                     player.sendMessage(Text.literal("已成功在观影区 " + area.name + " 移除名为 " + screen.name + " 的屏幕!").formatted(Formatting.GREEN));
                 }
@@ -114,7 +121,7 @@ public class ServerPacketHandler {
                 if (screen == null) return;
                 boolean force = buf.readBoolean();
                 if (force) {
-                    // TODO check permission
+                    if (!isAdmin(player)) return;
                     screen.skip();
                     return;
                 }
@@ -123,11 +130,11 @@ public class ServerPacketHandler {
                         player.getName(), screen.name, screen.skipped() == 0 ? 0 : (int) (area.players() * screen.skipPercent - screen.skipped() + 1)
                 ));
                 player.sendMessage(Text.literal("已投票跳过此视频").formatted(Formatting.GOLD));
-                PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                 area.forEachPlayer(p -> Objects.requireNonNull(pm.getPlayer(p)).sendMessage(s));
             }
             case SKIP_PERCENT -> {
-                // TODO check permission
+                if (!isAdmin(player)) return;
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 VideoScreen screen = area.getScreen(readName(buf));
@@ -136,7 +143,6 @@ public class ServerPacketHandler {
                 player.sendMessage(Text.literal("屏幕 " + screen.name + " 的投票跳过比例已设置为 " + screen.skipPercent).formatted(Formatting.GREEN));
             }
             case IDLE_PLAY -> {
-                // TODO
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 VideoScreen screen = area.getScreen(readName(buf));
@@ -144,7 +150,7 @@ public class ServerPacketHandler {
                 readString(buf, 1024);
             }
             case SET_UV -> {
-                // TODO check permission
+                if (!isAdmin(player)) return;
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 VideoScreen screen = area.getScreen(readName(buf));
@@ -152,20 +158,21 @@ public class ServerPacketHandler {
                 readUV(buf, screen);
                 if (area.hasPlayer()) {
                     byte[] data = setUV(screen, screen.u1, screen.v1, screen.u2, screen.v2);
-                    PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                     area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
                 }
             }
             case OPEN_MENU -> {
-                // TODO
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 VideoScreen screen = area.getScreen(readName(buf));
                 if (screen == null) return;
+                sendTo(player, config(VideoPlayerMain.version, DataHolder.config, isAdmin(player)));
             }
             case SET_META -> {
+                if (!isAdmin(player)) return;
                 short id = buf.readUnsignedByte();
-                if (id > Action.VALUES.length) {
+                if (id >= Action.VALUES.length) {
                     player.networkHandler.disconnect(Text.of("Unknown action type: " + id));
                     return;
                 }
@@ -182,11 +189,12 @@ public class ServerPacketHandler {
                 action.apply(screen, value);
                 if (area.hasPlayer()) {
                     byte[] data = setMeta(screen, id, value);
-                    PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                     area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
                 }
             }
             case SET_CUSTOM_META -> {
+                if (!isAdmin(player)) return;
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 VideoScreen screen = area.getScreen(readName(buf));
@@ -201,11 +209,12 @@ public class ServerPacketHandler {
                 }
                 if (area.hasPlayer()) {
                     byte[] data = setCustomMeta(screen, key, value, remove);
-                    PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                     area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
                 }
             }
             case SET_SCALE -> {
+                if (!isAdmin(player)) return;
                 VideoArea area = getArea(player, readName(buf));
                 if (area == null) return;
                 VideoScreen screen = area.getScreen(readName(buf));
@@ -221,7 +230,7 @@ public class ServerPacketHandler {
                 screen.scaleY = scaleY;
                 if (area.hasPlayer()) {
                     byte[] data = setScale(screen, fill, scaleX, scaleY);
-                    PlayerManager pm = Objects.requireNonNull(player.getServer()).getPlayerManager();
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
                     area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
                 }
             }
@@ -237,7 +246,50 @@ public class ServerPacketHandler {
                 if (listener == null) return;
                 long progress = listener.getProgress();
                 if (progress <= 0) return;
+                long clientProgress = buf.readableBytes() >= Long.BYTES ? buf.readLong() : -1;
+                progress = screen.autoSyncTarget(player.getUuid(), progress, clientProgress);
                 sendTo(player, autoSync(screen, clientTime, progress));
+            }
+            case MEDIA_OPTIONS -> {
+                VideoArea area = getArea(player, readName(buf));
+                if (area == null) return;
+                VideoScreen screen = area.getScreen(readName(buf));
+                if (screen == null) return;
+                String url = ByteBufUtils.readString(buf, 16384);
+                fetchOptions(player, screen, url);
+            }
+            case SEEK -> {
+                VideoArea area = getArea(player, readName(buf));
+                if (area == null) return;
+                VideoScreen screen = area.getScreen(readName(buf));
+                if (screen == null) return;
+                VideoInfo info = screen.currentPlaying();
+                IVideoListener listener = screen.getListener();
+                if (info == null || !info.seekable() || listener == null) return;
+                long progress = Math.max(0, buf.readLong());
+                if (DataHolder.config.debug) LOGGER.info("seek player={} area={} screen={} progress={}", player.getName().getString(), area.name, screen.name, progress);
+                listener.setProgress(progress);
+                if (area.hasPlayer()) {
+                    byte[] data = sync(screen, progress);
+                    PlayerManager pm = player.getEntityWorld().getServer().getPlayerManager();
+                    area.forEachPlayer(p -> sendTo(pm.getPlayer(p), data));
+                }
+            }
+            case QUEUE_ACTION -> {
+                VideoArea area = getArea(player, readName(buf));
+                if (area == null) return;
+                VideoScreen screen = area.getScreen(readName(buf));
+                if (screen == null) return;
+                int action = buf.readUnsignedByte();
+                int index = buf.readInt();
+                if (action != 5 && !isAdmin(player)) return;
+                if (DataHolder.config.debug) LOGGER.info("queue action player={} area={} screen={} action={} index={}", player.getName().getString(), area.name, screen.name, action, index);
+                if (screen.queueAction(action, index)) {
+                    if ((action == 3 && index == 0) || action == 4 || action == 5) {
+                        screen.playNext();
+                    }
+                    screen.syncInfo();
+                }
             }
             default -> player.networkHandler.disconnect(Text.of("Unknown packet type: " + type));
         }
@@ -247,7 +299,11 @@ public class ServerPacketHandler {
     }
 
     private static boolean fetchSource(ServerPlayerEntity player, String url, Consumer<VideoInfo> cb) {
-        CompletableFuture<VideoInfo> video = VideoProviders.from(url, new PlayerProviderSource(player));
+        return fetchSource(player, url, "", cb);
+    }
+
+    private static boolean fetchSource(ServerPlayerEntity player, String url, String optionId, Consumer<VideoInfo> cb) {
+        CompletableFuture<VideoInfo> video = VideoProviders.from(url, new PlayerProviderSource(player), optionId);
         if (video == null) {
             player.sendMessage(Text.of("无法解析视频源"));
             return true;
@@ -269,17 +325,56 @@ public class ServerPacketHandler {
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
+        }).exceptionally(e -> {
+            LOGGER.warn("Failed to fetch video source for {}", url, e);
+            player.sendMessage(Text.literal("解析视频源失败: " + shortError(e)).formatted(Formatting.RED));
+            return null;
         });
         return false;
     }
 
+    private static void fetchOptions(ServerPlayerEntity player, VideoScreen screen, String url) {
+        CompletableFuture<List<MediaOption>> options = VideoProviders.options(url, new PlayerProviderSource(player));
+        if (options == null) {
+            sendTo(player, mediaOptions(screen, url, List.of()));
+            return;
+        }
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return options.get();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).thenAccept(list -> {
+            List<MediaOption> safe = list == null ? List.of() : list;
+            if (DataHolder.config.debug) LOGGER.info("media options player={} screen={} count={} url={}", player.getName().getString(), screen.name, safe.size(), url);
+            sendTo(player, mediaOptions(screen, url, safe));
+        }).exceptionally(e -> {
+            LOGGER.warn("Failed to fetch media options for {}", url, e);
+            player.sendMessage(Text.literal("画质查询失败: " + shortError(e)).formatted(Formatting.RED));
+            sendTo(player, mediaOptions(screen, url, List.of()));
+            return null;
+        });
+    }
+
+    private static String shortError(Throwable e) {
+        Throwable t = e;
+        while (t.getCause() != null) t = t.getCause();
+        String message = t.getMessage();
+        return message == null || message.isBlank() ? t.getClass().getSimpleName() : message;
+    }
+
     private static VideoArea getArea(ServerPlayerEntity player, String name) {
-        String dim = player.getServerWorld().getRegistryKey().getValue().toString();
+        String dim = player.getEntityWorld().getRegistryKey().getValue().toString();
         DataHolder.lock();
-        VideoArea area = DataHolder.areas.get(dim).get(name);
-        DataHolder.unlock();
-        // TODO check bypass permission
-        return area != null && area.containsPlayer(player.getUuid()) ? area : null;
+        VideoArea area;
+        try {
+            HashMap<String, VideoArea> byDim = DataHolder.areas.get(dim);
+            area = byDim == null ? null : byDim.get(name);
+        } finally {
+            DataHolder.unlock();
+        }
+        return area != null && (area.containsPlayer(player.getUuid()) || isAdmin(player)) ? area : null;
     }
 
     private static String readName(ByteBuf buf) {
@@ -330,13 +425,27 @@ public class ServerPacketHandler {
     }
 
     public static byte[] config(String version, ServerConfig config) {
+        return config(version, config, true);
+    }
+
+    public static byte[] config(String version, ServerConfig config, boolean canManageQueue) {
         ByteBuf buf = create(CONFIG);
         writeString(buf, version);
         writeString(buf, config.remoteControlName);
         buf.writeFloat(config.remoteControlId);
         buf.writeFloat(config.remoteControlRange);
         buf.writeFloat(config.noControlRange);
+        buf.writeBoolean(canManageQueue);
         return toByteArray(buf);
+    }
+
+    public static boolean isAdmin(ServerPlayerEntity player) {
+        try {
+            Object result = ServerPlayerEntity.class.getMethod("hasPermissionLevel", int.class).invoke(player, 2);
+            return result instanceof Boolean allowed && allowed;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
     }
 
     public static byte[] request(VideoScreen screen, VideoInfo info) {
@@ -481,6 +590,18 @@ public class ServerPacketHandler {
         writeString(buf, screen.name);
         buf.writeLong(clientTime);
         buf.writeLong(progress);
+        return toByteArray(buf);
+    }
+
+    public static byte[] mediaOptions(VideoScreen screen, String url, List<MediaOption> options) {
+        ByteBuf buf = create(MEDIA_OPTIONS);
+        writeString(buf, screen.area.name);
+        writeString(buf, screen.name);
+        writeString(buf, url);
+        buf.writeByte(Math.min(options.size(), 255));
+        for (int i = 0; i < Math.min(options.size(), 255); i++) {
+            MediaOption.write(buf, options.get(i));
+        }
         return toByteArray(buf);
     }
 }

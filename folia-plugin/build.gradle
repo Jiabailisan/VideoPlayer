@@ -1,0 +1,62 @@
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '9.2.2'
+}
+
+group = "${rootProject.group}.folia"
+version = rootProject.version
+
+base {
+    archivesName = "VideoPlayer-Core-folia"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+dependencies {
+    compileOnly "io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT"
+
+    implementation "com.google.code.gson:gson:2.11.0"
+    implementation "org.joml:joml:1.10.8"
+    implementation "io.netty:netty-buffer:4.1.118.Final"
+    implementation "com.google.guava:guava:33.4.8-jre"
+    implementation "com.google.zxing:core:3.5.3"
+    implementation "com.google.zxing:javase:3.5.3"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = "UTF-8"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("plugin.yml") {
+        expand "version": project.version
+    }
+}
+
+shadowJar {
+    archiveClassifier = ""
+    relocate "com.google.gson", "com.github.squi2rel.vp.folia.libs.gson"
+    relocate "org.joml", "com.github.squi2rel.vp.folia.libs.joml"
+    relocate "io.netty", "com.github.squi2rel.vp.folia.libs.netty"
+    relocate "com.google.common", "com.github.squi2rel.vp.folia.libs.guava"
+    relocate "com.google.zxing", "com.github.squi2rel.vp.folia.libs.zxing"
+}
+
+assemble.dependsOn shadowJar
+
+tasks.register("copyTestJar") {
+    doNotTrackState("Copies the test jar into the workspace root, which contains Gradle lock files.")
+    dependsOn tasks.named("shadowJar")
+    doLast {
+        copy {
+            from(tasks.named("shadowJar").flatMap { it.archiveFile })
+            into(rootProject.projectDir)
+            rename { name -> "[A测试]${name}" }
+        }
+    }
+}

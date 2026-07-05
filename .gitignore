@@ -38,3 +38,10 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# local test artifacts
+
+[A测试]*.jar
+youtube-cookies.txt
+bilibili-cookies.txt
+tools/

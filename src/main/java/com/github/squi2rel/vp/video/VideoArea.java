@@ -102,6 +102,19 @@ public class VideoArea {
         return null;
     }
 
+    public synchronized ArrayList<VideoScreen> removeScreens(String name) {
+        ArrayList<VideoScreen> removed = new ArrayList<>();
+        screens.removeIf(screen -> {
+            if (screen.name.equals(name)) {
+                screen.remove();
+                removed.add(screen);
+                return true;
+            }
+            return false;
+        });
+        return removed;
+    }
+
     public static VideoArea from(Vector3f v, Vector3f v2, String name, String dim) {
         return new VideoArea(v, v2, name, dim);
     }

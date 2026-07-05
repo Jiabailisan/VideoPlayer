@@ -25,6 +25,7 @@ public class ClientVideoArea extends VideoArea {
 
     @Override
     public synchronized void addScreen(VideoScreen screen) {
+        remove(screen.name);
         super.addScreen(screen);
         if (loaded) {
             ((ClientVideoScreen) screen).load();
@@ -35,11 +36,11 @@ public class ClientVideoArea extends VideoArea {
     public synchronized void load() {
         if (removed) throw new IllegalStateException();
         if (loaded) return;
+        loaded = true;
         for (VideoScreen screen : screens) {
             ((ClientVideoScreen) screen).load();
         }
         run();
-        loaded = true;
     }
 
     private synchronized void run() {

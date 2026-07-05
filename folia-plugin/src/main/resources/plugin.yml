@@ -1,0 +1,25 @@
+name: VideoPlayer-Core-folia
+version: ${version}
+main: com.github.squi2rel.vp.folia.VideoPlayerFoliaPlugin
+api-version: '1.21'
+folia-supported: true
+authors:
+  - squi2rel
+  - ported-by-codex
+description: Folia/Paper core for VideoPlayer.
+commands:
+  vpfolia:
+    description: VideoPlayer Folia administration command.
+    usage: /vpfolia <save|reload|auth>
+  vlc-core:
+    description: VideoPlayer Folia core command.
+    usage: /vlc-core <createArea|createScreen|play|skip|save|reload|auth>
+    aliases:
+      - vpfolia-core
+permissions:
+  videoplayer.admin:
+    description: Allows managing VideoPlayer areas and screens.
+    default: op
+  videoplayer.use:
+    description: Allows requesting and controlling videos.
+    default: true

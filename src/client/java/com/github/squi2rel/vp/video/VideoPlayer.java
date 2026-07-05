@@ -4,6 +4,7 @@ import com.github.squi2rel.vp.provider.VideoInfo;
 import com.github.squi2rel.vp.vivecraft.Vivecraft;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -95,11 +96,11 @@ public class VideoPlayer implements IVideoPlayer, MetaListener {
     }
 
     @Override
-    public int getTextureId() {
+    public Identifier getTextureIdentifier() {
         if (initialized) {
-            return quad.getTextureId();
+            return quad.getTextureIdentifier();
         }
-        return -1;
+        return VideoQuad.MISSING_IDENTIFIER;
     }
 
     @Override

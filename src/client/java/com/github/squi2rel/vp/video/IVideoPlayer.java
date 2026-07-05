@@ -4,6 +4,7 @@ import com.github.squi2rel.vp.ScreenRenderer;
 import com.github.squi2rel.vp.provider.VideoInfo;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -34,7 +35,7 @@ public interface IVideoPlayer {
 
     void cleanup();
 
-    int getTextureId();
+    Identifier getTextureIdentifier();
 
     void stop();
 
@@ -83,7 +84,7 @@ public interface IVideoPlayer {
         matrices.translate(-ScreenRenderer.cameraX, -ScreenRenderer.cameraY, -ScreenRenderer.cameraZ);
         Matrix4f mat = matrices.peek().getPositionMatrix();
         matrices.pop();
-        RenderLayer layer = ScreenRenderer.getLayer(getTextureId());
+        RenderLayer layer = ScreenRenderer.getLayer(getTextureIdentifier());
         VertexConsumer consumer = immediate.getBuffer(layer);
         boolean vertical = false;
         float scale = 1;
@@ -97,6 +98,7 @@ public interface IVideoPlayer {
         }
         if (scale == 1) {
             draw(mat, consumer, p1, p2, p3, p4, fx ? s.u2 : s.u1, fy ? s.v2 : s.v1, fx ? s.u1 : s.u2, fy ? s.v1 : s.v2);
+            immediate.draw(layer);
             return;
         }
         float inv = (1 - scale) / 2;
@@ -115,9 +117,9 @@ public interface IVideoPlayer {
     default void draw(Matrix4f mat, VertexConsumer consumer, Vector3f p1, Vector3f p2, Vector3f p3, Vector3f p4, float u1, float v1, float u2, float v2) {
         int gray = (int) (config.brightness / 100.0 * 255);
         int color = 0xFF000000 | (gray << 16) | (gray << 8) | gray;
-        consumer.vertex(mat, p1.x, p1.y, p1.z).texture(u1, v1).color(color);
-        consumer.vertex(mat, p2.x, p2.y, p2.z).texture(u1, v2).color(color);
-        consumer.vertex(mat, p3.x, p3.y, p3.z).texture(u2, v2).color(color);
-        consumer.vertex(mat, p4.x, p4.y, p4.z).texture(u2, v1).color(color);
+        consumer.vertex(mat, p1.x, p1.y, p1.z).texture(u1, v1).color(color).overlay(OverlayTexture.DEFAULT_UV).light(LightmapTextureManager.MAX_LIGHT_COORDINATE).normal(0, 1, 0);
+        consumer.vertex(mat, p2.x, p2.y, p2.z).texture(u1, v2).color(color).overlay(OverlayTexture.DEFAULT_UV).light(LightmapTextureManager.MAX_LIGHT_COORDINATE).normal(0, 1, 0);
+        consumer.vertex(mat, p3.x, p3.y, p3.z).texture(u2, v2).color(color).overlay(OverlayTexture.DEFAULT_UV).light(LightmapTextureManager.MAX_LIGHT_COORDINATE).normal(0, 1, 0);
+        consumer.vertex(mat, p4.x, p4.y, p4.z).texture(u2, v1).color(color).overlay(OverlayTexture.DEFAULT_UV).light(LightmapTextureManager.MAX_LIGHT_COORDINATE).normal(0, 1, 0);
     }
 }

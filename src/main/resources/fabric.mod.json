@@ -8,7 +8,7 @@
 		"squi2rel"
 	],
 	"contact": {
-		"sources": "https://github.com/VRCub/VideoPlayer"
+		"sources": "https://github.com/squi2rel/VideoPlayer/"
 	},
 	"license": "GPL-3.0",
 	"icon": "assets/videoplayer/icon.png",
@@ -30,7 +30,7 @@
 	],
 	"depends": {
 		"fabricloader": ">=0.16.14",
-		"minecraft": "~1.21.4",
+		"minecraft": "~1.21.11",
 		"java": ">=21",
 		"fabric-api": "*"
 	},

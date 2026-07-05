@@ -1,0 +1,82 @@
+plugins {
+	id 'fabric-loom'
+	id 'maven-publish'
+}
+
+version = rootProject.version
+group = rootProject.group
+
+base {
+	archivesName = "VideoPlayer-Core-fabric"
+}
+
+loom {
+	mods {
+		"videoplayer" {
+			sourceSet sourceSets.main
+		}
+	}
+}
+
+sourceSets {
+	main {
+		java.srcDirs = [rootProject.file("src/main/java")]
+		resources.srcDirs = ["src/main/resources"]
+	}
+}
+
+repositories {
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+	mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_version}"
+
+}
+
+processResources {
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	inputs.property "version", project.version
+	from(rootProject.file("src/main/resources")) {
+		exclude "fabric.mod.json"
+	}
+	filesMatching("fabric.mod.json") {
+		expand "version": inputs.properties.version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.release = 21
+	options.encoding = "UTF-8"
+}
+
+java {
+	withSourcesJar()
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.register("copyTestJar") {
+	doNotTrackState("Copies the test jar into the workspace root, which contains Gradle lock files.")
+	dependsOn tasks.named("remapJar")
+	doLast {
+		copy {
+			from(tasks.named("remapJar").flatMap { it.archiveFile })
+			into(rootProject.projectDir)
+			rename { name -> "[A测试]${name}" }
+		}
+	}
+}
